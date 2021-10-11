@@ -24,6 +24,9 @@ func chk(err error){
 }
 
 func songSearch(query string) (song Song) {
+	if !strings.HasPrefix(query, "https:") {
+		query = "ytsearch:" + query
+	}
 	cmd := exec.Command("youtube-dl", "-j", query)
 	stdout, err := cmd.Output()
 	chk(err)
@@ -38,7 +41,7 @@ func songSearch(query string) (song Song) {
 	} else if video["url"] != nil {
 		song.url = video["url"].(string)
 	}
-
+	
 	return song
 }
 
