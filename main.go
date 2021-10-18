@@ -8,49 +8,30 @@ import (
 	"os/exec"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
 
 	"github.com/bwmarrin/dgvoice"
 	"github.com/bwmarrin/discordgo"
-	"github.com/jonas747/dca"
+	// "github.com/jonas747/dca"
 )
 
-const (
-	channels   int = 2     // 1 for mono, 2 for stereo
-	frameRate  int = 48000 // audio sampling rate
-	frameSize  int = 960   // uint16 size of each audio frame 960/48KHz = 20ms
-	bufferSize int = 1024  // max size of opus data 1K
-)
+var ginsts map[string]GuildInstance
 
-type Song struct {
-	title string
-	url string
-	id string
-	duration string
+type GuildInstance struct {
+	v VoiceInstance
+	s *discordgo.Session
+	g discordgo.Guild
+	lastChannel string
 }
 
-type VoiceInstance struct {
-	voice      *discordgo.VoiceConnection
-	session    *discordgo.Session
-	encoder    *dca.EncodeSession
-	stream     *dca.StreamingSession
-	run        *exec.Cmd
-	queueMutex sync.Mutex
-	audioMutex sync.Mutex
-	nowPlaying Song
-	queue      []Song
-	recv       []int16
-	guildID    string
-	channelID  string
-	speaking   bool
-	pause      bool
-	stop       bool
-	skip       bool
-	radioFlag  bool
+func (g GuildInstance) Send(msg string){
+	if g.lastChannel == "" {
+		return
+	}
+	g.s.ChannelMessageSend(g.lastChannel, msg)
 }
 
-func chk(err error){
+func chk(err error) {
 	if err != nil {
 		panic(err)
 	}
@@ -83,11 +64,10 @@ func songSearch(query string) (song Song) {
 	return song
 }
 
-func getUserVoiceChannel(s *discordgo.Session, m *discordgo.MessageCreate) (string){
-	guild, err := s.State.Guild(m.GuildID)
-	chk(err)
+func getUserVoiceChannel(s *discordgo.Session, m *discordgo.MessageCreate) (string) {
+	ginst := getGinst(s, m)
 
-	for _, vs := range guild.VoiceStates {
+	for _, vs := range ginst.g.VoiceStates {
 		if m.Author.ID == vs.UserID {
 			return vs.ChannelID
 		}
@@ -96,10 +76,24 @@ func getUserVoiceChannel(s *discordgo.Session, m *discordgo.MessageCreate) (stri
 	return ""
 }
 
+func getGinst(s *discordgo.Session, m *discordgo.MessageCreate) GuildInstance {
+	if ginst, ok := ginsts[m.GuildID]; !ok {
+		ginsts[m.GuildID] = GuildInstance {
+			v: VoiceInstance{}, 
+			s: s, 
+			lastChannel: m.ChannelID,
+		}
+		return ginsts[m.GuildID]
+	} else {
+		return ginst
+	}
+}
+
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if !strings.HasPrefix(m.Content, "?") {
 		return
 	}
+	ginst := getGinst(s, m)
 	m.Content = m.Content[1:]
 	split := strings.SplitN(m.Content, " ", 2)
 	cmd  := split[0]
@@ -110,11 +104,11 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	switch cmd {
 	case "ping":
-		s.ChannelMessageSend(m.ChannelID, "pong")
+		ginst.Send("pong")
 	case "play":
 		vc := getUserVoiceChannel(s, m)
 		if vc == "" {
-			s.ChannelMessageSend(m.ChannelID, "User not in voice channel!")
+			ginst.Send("User not in voice channel!")
 			return
 		}
 		dgv, err := s.ChannelVoiceJoin(m.GuildID, vc, false, true)
