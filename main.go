@@ -10,21 +10,20 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/bwmarrin/dgvoice"
+	// "github.com/bwmarrin/dgvoice"
 	"github.com/bwmarrin/discordgo"
-	// "github.com/jonas747/dca"
 )
 
 var ginsts map[string]GuildInstance
 
 type GuildInstance struct {
-	v VoiceInstance
+	v *VoiceInstance
 	s *discordgo.Session
-	g discordgo.Guild
+	g *discordgo.Guild
 	lastChannel string
 }
 
-func (g GuildInstance) Send(msg string){
+func (g *GuildInstance) Send(msg string){
 	if g.lastChannel == "" {
 		return
 	}
@@ -44,6 +43,7 @@ func songSearch(query string) (song Song) {
 	println("Downloading video...")
 	cmd := exec.Command("youtube-dl", "-j", query)
 	stdout, err := cmd.Output()
+	cmd.Run()
 	chk(err)
 
 	var video map[string]interface{}
@@ -52,7 +52,7 @@ func songSearch(query string) (song Song) {
 	if video["formats"] != nil {
 		formats := video["formats"].([]interface{})
 		format  := formats[0].(map[string]interface{})
-		fmt.Printf("%+v\n", formats)
+		// fmt.Printf("%+v\n", formats)
 		song.url = format["url"].(string)
 		// song.duration = format["duration"].(string)
 		// song.title = format["title"].(string)
@@ -65,9 +65,14 @@ func songSearch(query string) (song Song) {
 }
 
 func getUserVoiceChannel(s *discordgo.Session, m *discordgo.MessageCreate) (string) {
-	ginst := getGinst(s, m)
+	// ginst := getGinst(s, m)
 
-	for _, vs := range ginst.g.VoiceStates {
+	guild, err := s.State.Guild(m.GuildID)
+	chk(err)
+
+	// fmt.Printf("%+v\n", ginst)
+
+	for _, vs := range guild.VoiceStates {
 		if m.Author.ID == vs.UserID {
 			return vs.ChannelID
 		}
@@ -76,16 +81,20 @@ func getUserVoiceChannel(s *discordgo.Session, m *discordgo.MessageCreate) (stri
 	return ""
 }
 
-func getGinst(s *discordgo.Session, m *discordgo.MessageCreate) GuildInstance {
+func getGinst(s *discordgo.Session, m *discordgo.MessageCreate) (ginst *GuildInstance) {
 	if ginst, ok := ginsts[m.GuildID]; !ok {
+		guild, err := s.State.Guild(m.GuildID)
+		chk(err)
 		ginsts[m.GuildID] = GuildInstance {
-			v: VoiceInstance{}, 
+			v: &VoiceInstance{ginst: &ginst}, 
 			s: s, 
+			g: guild,
 			lastChannel: m.ChannelID,
 		}
-		return ginsts[m.GuildID]
+		ginst := ginsts[m.GuildID]
+		return &ginst	
 	} else {
-		return ginst
+		return &ginst
 	}
 }
 
@@ -112,10 +121,12 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			return
 		}
 		dgv, err := s.ChannelVoiceJoin(m.GuildID, vc, false, true)
+		ginst.v.voice = dgv
 		chk(err)
 		song := songSearch(arg)
-		dgvoice.PlayAudioFile(dgv, song.url, make(chan bool))
-		fmt.Println(song)
+		// PlayAudioFile(dgv, song.url, make(chan bool))
+		ginst.v.PlayQueue(song)
+		// fmt.Println(song)
 	}
 }
 
@@ -133,9 +144,11 @@ func main() {
 	err = dg.Open()
 	chk(err)
 
+	ginsts = make(map[string]GuildInstance)
+
 	fmt.Println("Bot is now running.  Press CTRL-C to exit.")
 	sc := make(chan os.Signal, 1)
-	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
+	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
 
 	dg.Close()
