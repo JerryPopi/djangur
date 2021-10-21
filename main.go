@@ -1,16 +1,13 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
 
-	// "github.com/bwmarrin/dgvoice"
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -36,41 +33,9 @@ func chk(err error) {
 	}
 }
 
-func songSearch(query string) (song Song) {
-	if !strings.HasPrefix(query, "https:") {
-		query = "ytsearch:" + query
-	}
-	println("Downloading video...")
-	cmd := exec.Command("youtube-dl", "-j", query)
-	stdout, err := cmd.Output()
-	cmd.Run()
-	chk(err)
-
-	var video map[string]interface{}
-	json.Unmarshal(stdout, &video)
-
-	if video["formats"] != nil {
-		formats := video["formats"].([]interface{})
-		format  := formats[0].(map[string]interface{})
-		// fmt.Printf("%+v\n", formats)
-		song.url = format["url"].(string)
-		// song.duration = format["duration"].(string)
-		// song.title = format["title"].(string)
-		// song.id = format["id"].(string)
-	} else if video["url"] != nil {
-		song.url = video["url"].(string)
-	}
-	println("Done downloading video!")
-	return song
-}
-
 func getUserVoiceChannel(s *discordgo.Session, m *discordgo.MessageCreate) (string) {
-	// ginst := getGinst(s, m)
-
 	guild, err := s.State.Guild(m.GuildID)
 	chk(err)
-
-	// fmt.Printf("%+v\n", ginst)
 
 	for _, vs := range guild.VoiceStates {
 		if m.Author.ID == vs.UserID {
@@ -109,6 +74,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	arg := ""
 	if len(split) == 2 {
 		arg = split[1]
+		fmt.Println(arg)
 	}
 
 	switch cmd {
@@ -123,10 +89,9 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		dgv, err := s.ChannelVoiceJoin(m.GuildID, vc, false, true)
 		ginst.v.voice = dgv
 		chk(err)
-		song := songSearch(arg)
-		// PlayAudioFile(dgv, song.url, make(chan bool))
-		ginst.v.PlayQueue(song)
-		// fmt.Println(song)
+		// song := songSearch(arg)
+		// ginst.v.PlayQueue(song)
+		ginst.v.AudioPlayer(arg)
 	}
 }
 

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"github.com/bwmarrin/discordgo"
@@ -77,19 +79,14 @@ func (v *VoiceInstance) ClearQueue(){
 func (v *VoiceInstance) PlayQueue(song Song) {
 	
 	v.AddQueue(song)
-	fmt.Println("STIGNA DO 1")
 	if v.speaking {
 		//bota govori!
 		return
 	}
 
 	go func() {
-	fmt.Println("STIGNA DO 2")
-
 		v.audioMutex.Lock()
 		defer v.audioMutex.Unlock()
-	fmt.Println("STIGNA DO 3")
-
 		for {
 			if len(v.queue) == 0 {
 				//NQQ PESNI SHEFE
@@ -103,12 +100,12 @@ func (v *VoiceInstance) PlayQueue(song Song) {
 			v.speaking = true
 			v.pause = false
 			v.voice.Speaking(true)
-			fmt.Println("STIGNA DO 4")
+			fmt.Println("predi puskane")
 
 			//tuka se puska nali
-			// v.DCA(song.url)
-			v.DCA("https://www.youtube.com/watch?v=felyOmO6liE")
-			fmt.Println("STIGNA DO 5")
+			v.AudioPlayer(song.title)
+			// v.DCA("https://www.youtube.com/watch?v=felyOmO6liE")
+			fmt.Println("sled puskane")
 
 			v.PopFromQueue(1)
 			if v.stop {
@@ -122,13 +119,26 @@ func (v *VoiceInstance) PlayQueue(song Song) {
 	}()
 }
 
-func (v *VoiceInstance) DCA(url string){
+func (v *VoiceInstance) AudioPlayer(query string){
+	if !strings.HasPrefix("https://", query){
+		query = "ytsearch:" + query
+	}
+	fmt.Println(query)
 	dir, err := ioutil.TempDir("/tmp", "djangur")
 	chk(err)
 	defer os.RemoveAll(dir)
-	cmd := exec.Command("yt-dlp", "--verbose", "-x", "--audio-format", "opus", "-o", dir + "/song.opus", url)
-	cmd.Output()
-	
+	cmd := exec.Command("yt-dlp", "--quiet", "-j", "--no-simulate", "-x", "--audio-format", "opus", "-o", dir + "/song.opus", query)
+	out, err := cmd.Output()
+	chk(err)
+	// os.WriteFile("/tmp/dat1", out, 0644)
+	// fmt.Println(string(out))
+
+	var video map[string]interface{}
+	json.Unmarshal(out, &video)
+
+	fmt.Println(video["title"])
+	fmt.Println(video["duration"])
+
 	opts := dca.StdEncodeOptions
 	opts.RawOutput = true
 	opts.Bitrate = 128
@@ -146,7 +156,7 @@ func (v *VoiceInstance) DCA(url string){
 			if err != nil && err != io.EOF {
 				fmt.Println("FATAL: an error occured\n ", err)
 			}
-			fmt.Println("ZASHTO SPRQ BE")
+			fmt.Println("End of track")
 			encodeSession.Cleanup()
 			return
 		}
