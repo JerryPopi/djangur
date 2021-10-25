@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"os"
+	// "os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -14,12 +14,7 @@ import (
 	"github.com/jonas747/dca"
 )
 
-// const (
-// 	channels   int = 2     // 1 for mono, 2 for stereo
-// 	frameRate  int = 48000 // audio sampling rate
-// 	frameSize  int = 960   // uint16 size of each audio frame 960/48KHz = 20ms
-// 	bufferSize int = 1024  // max size of opus data 1K
-// )
+var guildFolders []string
 
 type VoiceInstance struct {
 	ginst *GuildInstance
@@ -40,13 +35,15 @@ type VoiceInstance struct {
 	stop       bool
 	skip       bool
 	radioFlag  bool
+	folder	   string
 }
 
 type Song struct {
 	title    string
 	url      string
 	id       string
-	duration string
+	// duration string
+	duration float64
 }
 
 func (v *VoiceInstance) AddQueue(song Song) {
@@ -76,11 +73,38 @@ func (v *VoiceInstance) ClearQueue(){
 	v.queue = []Song{}
 }
 
+func (v *VoiceInstance) DownloadSong(query string) (song Song) {
+	if !strings.HasPrefix("https://", query){
+		query = "ytsearch:" + query
+	}
+	fmt.Println(query)
+	if v.folder == "" {
+		dir, err := ioutil.TempDir("/tmp", "djangur")
+		chk(err)
+		v.folder = dir
+		guildFolders = append(guildFolders, dir)
+	}
+
+	fmt.Println("mina folderite")
+
+	cmd := exec.Command("yt-dlp", "--quiet", "-j", "--no-simulate", "-x", "--audio-format", "opus", "-o", v.folder + "/%(id)s.opus", query)
+	out, err := cmd.Output()
+	chk(err)
+
+	fmt.Println("mina nasra se")
+
+
+	var video map[string]interface{}
+	json.Unmarshal(out, &video)
+	song.title = video["title"].(string)
+	song.id = video["id"].(string)
+	song.duration = video["duration"].(float64)
+	return song
+}
+
 func (v *VoiceInstance) PlayQueue(song Song) {
-	
 	v.AddQueue(song)
 	if v.speaking {
-		//bota govori!
 		return
 	}
 
@@ -89,9 +113,9 @@ func (v *VoiceInstance) PlayQueue(song Song) {
 		defer v.audioMutex.Unlock()
 		for {
 			if len(v.queue) == 0 {
-				//NQQ PESNI SHEFE
 				return
 			}
+
 			v.nowPlaying = v.GetSong()
 			go v.ginst.Send("Now playing " + song.title)
 
@@ -100,17 +124,16 @@ func (v *VoiceInstance) PlayQueue(song Song) {
 			v.speaking = true
 			v.pause = false
 			v.voice.Speaking(true)
-			fmt.Println("predi puskane")
 
-			//tuka se puska nali
-			v.AudioPlayer(song.title)
-			// v.DCA("https://www.youtube.com/watch?v=felyOmO6liE")
-			fmt.Println("sled puskane")
+			v.AudioPlayer(song)
 
 			v.PopFromQueue(1)
+			fmt.Println(v.queue)
+			
 			if v.stop {
 				v.ClearQueue()
 			}
+
 			v.stop = false
 			v.skip = false
 			v.speaking = false
@@ -119,37 +142,20 @@ func (v *VoiceInstance) PlayQueue(song Song) {
 	}()
 }
 
-func (v *VoiceInstance) AudioPlayer(query string){
-	if !strings.HasPrefix("https://", query){
-		query = "ytsearch:" + query
-	}
-	fmt.Println(query)
-	dir, err := ioutil.TempDir("/tmp", "djangur")
-	chk(err)
-	defer os.RemoveAll(dir)
-	cmd := exec.Command("yt-dlp", "--quiet", "-j", "--no-simulate", "-x", "--audio-format", "opus", "-o", dir + "/song.opus", query)
-	out, err := cmd.Output()
-	chk(err)
-	// os.WriteFile("/tmp/dat1", out, 0644)
-	// fmt.Println(string(out))
-
-	var video map[string]interface{}
-	json.Unmarshal(out, &video)
-
-	fmt.Println(video["title"])
-	fmt.Println(video["duration"])
-
+func (v *VoiceInstance) AudioPlayer(song Song){
 	opts := dca.StdEncodeOptions
 	opts.RawOutput = true
 	opts.Bitrate = 128
 	opts.Application = "lowdelay"
-	fmt.Println(dir)
-	encodeSession, err := dca.EncodeFile(dir + "/song.opus", opts)
+
+	encodeSession, err := dca.EncodeFile(v.folder + "/" + song.id + ".opus", opts)
 	chk(err)
+
 	v.encoder = encodeSession
 	done := make(chan error)
 	stream := dca.NewStream(encodeSession, v.voice, done)
 	v.stream = stream
+
 	for {
 		select {
 		case err := <- done:

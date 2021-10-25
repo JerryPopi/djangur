@@ -29,6 +29,9 @@ func (g *GuildInstance) Send(msg string){
 
 func chk(err error) {
 	if err != nil {
+		for _, k := range guildFolders {
+			os.RemoveAll(k)
+		} 
 		panic(err)
 	}
 }
@@ -80,7 +83,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	switch cmd {
 	case "ping":
 		ginst.Send("pong")
-	case "play":
+	case "play", "p":
 		vc := getUserVoiceChannel(s, m)
 		if vc == "" {
 			ginst.Send("User not in voice channel!")
@@ -89,9 +92,15 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		dgv, err := s.ChannelVoiceJoin(m.GuildID, vc, false, true)
 		ginst.v.voice = dgv
 		chk(err)
-		// song := songSearch(arg)
-		// ginst.v.PlayQueue(song)
-		ginst.v.AudioPlayer(arg)
+
+		song := ginst.v.DownloadSong(arg)
+		ginst.v.PlayQueue(song)
+	case "skip", "s":
+		ginst.v.Skip()
+	case "pause":
+		ginst.v.Pause()
+	case "resume":
+		ginst.v.Resume()
 	}
 }
 
@@ -116,5 +125,8 @@ func main() {
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
 
+	for _, k := range guildFolders {
+		os.RemoveAll(k)
+	} 
 	dg.Close()
 }
