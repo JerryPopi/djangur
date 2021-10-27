@@ -14,29 +14,37 @@ import (
 var ginsts map[string]GuildInstance
 
 type GuildInstance struct {
-	v *VoiceInstance
-	s *discordgo.Session
-	g *discordgo.Guild
+	v           *VoiceInstance
+	s           *discordgo.Session
+	g           *discordgo.Guild
 	lastChannel string
 }
 
-func (g *GuildInstance) Send(msg string){
+func (g *GuildInstance) Send(msg string) {
 	if g.lastChannel == "" {
+		fmt.Println("lastchannel is empty")
 		return
 	}
 	g.s.ChannelMessageSend(g.lastChannel, msg)
+}
+
+func (g *GuildInstance) SendEmbed(emb discordgo.MessageEmbed) {
+	if g.lastChannel == "" {
+		return
+	}
+	g.s.ChannelMessageSendEmbed(g.lastChannel, &emb)
 }
 
 func chk(err error) {
 	if err != nil {
 		for _, k := range guildFolders {
 			os.RemoveAll(k)
-		} 
+		}
 		panic(err)
 	}
 }
 
-func getUserVoiceChannel(s *discordgo.Session, m *discordgo.MessageCreate) (string) {
+func getUserVoiceChannel(s *discordgo.Session, m *discordgo.MessageCreate) string {
 	guild, err := s.State.Guild(m.GuildID)
 	chk(err)
 
@@ -53,14 +61,16 @@ func getGinst(s *discordgo.Session, m *discordgo.MessageCreate) (ginst *GuildIns
 	if ginst, ok := ginsts[m.GuildID]; !ok {
 		guild, err := s.State.Guild(m.GuildID)
 		chk(err)
-		ginsts[m.GuildID] = GuildInstance {
-			v: &VoiceInstance{ginst: &ginst}, 
-			s: s, 
-			g: guild,
+		ginsts[m.GuildID] = GuildInstance{
+			v:           &VoiceInstance{ginst: &ginst},
+			s:           s,
+			g:           guild,
 			lastChannel: m.ChannelID,
 		}
 		ginst := ginsts[m.GuildID]
-		return &ginst	
+		ginst.v.ginst = &ginst
+
+		return &ginst
 	} else {
 		return &ginst
 	}
@@ -73,7 +83,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	ginst := getGinst(s, m)
 	m.Content = m.Content[1:]
 	split := strings.SplitN(m.Content, " ", 2)
-	cmd  := split[0]
+	cmd := split[0]
 	arg := ""
 	if len(split) == 2 {
 		arg = split[1]
@@ -84,6 +94,11 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	case "ping":
 		ginst.Send("pong")
 	case "play", "p":
+		if ginst.v.pause && arg == "" {
+			ginst.v.Resume()
+			return
+		}
+
 		vc := getUserVoiceChannel(s, m)
 		if vc == "" {
 			ginst.Send("User not in voice channel!")
@@ -101,6 +116,8 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		ginst.v.Pause()
 	case "resume":
 		ginst.v.Resume()
+	case "stop":
+		ginst.v.Stop()
 	}
 }
 
@@ -127,6 +144,7 @@ func main() {
 
 	for _, k := range guildFolders {
 		os.RemoveAll(k)
-	} 
+	}
+
 	dg.Close()
 }

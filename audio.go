@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Clinet/discordgo-embed"
 	"github.com/bwmarrin/discordgo"
 	"github.com/jonas747/dca"
 )
@@ -17,32 +18,25 @@ import (
 var guildFolders []string
 
 type VoiceInstance struct {
-	ginst *GuildInstance
+	ginst      *GuildInstance
 	voice      *discordgo.VoiceConnection
-	session    *discordgo.Session
 	encoder    *dca.EncodeSession
 	stream     *dca.StreamingSession
-	run        *exec.Cmd
 	queueMutex sync.Mutex
 	audioMutex sync.Mutex
 	nowPlaying Song
 	queue      []Song
-	recv       []int16
-	guildID    string
-	channelID  string
 	speaking   bool
 	pause      bool
 	stop       bool
 	skip       bool
-	radioFlag  bool
-	folder	   string
+	folder     string
 }
 
 type Song struct {
 	title    string
 	url      string
 	id       string
-	// duration string
 	duration float64
 }
 
@@ -56,25 +50,26 @@ func (v *VoiceInstance) GetSong() (song Song) {
 	v.queueMutex.Lock()
 	defer v.queueMutex.Unlock()
 	if len(v.queue) != 0 {
+		fmt.Printf("queue at getsong %+v\n", v.queue[0])
 		return v.queue[0]
 	}
 	return
 }
 
-func (v *VoiceInstance) PopFromQueue(i int){
+func (v *VoiceInstance) PopFromQueue(i int) {
 	v.queueMutex.Lock()
 	defer v.queueMutex.Unlock()
 	v.queue = v.queue[i:]
 }
 
-func (v *VoiceInstance) ClearQueue(){
+func (v *VoiceInstance) ClearQueue() {
 	v.queueMutex.Lock()
 	defer v.queueMutex.Unlock()
 	v.queue = []Song{}
 }
 
 func (v *VoiceInstance) DownloadSong(query string) (song Song) {
-	if !strings.HasPrefix("https://", query){
+	if !strings.HasPrefix("https://", query) {
 		query = "ytsearch:" + query
 	}
 	fmt.Println(query)
@@ -87,12 +82,12 @@ func (v *VoiceInstance) DownloadSong(query string) (song Song) {
 
 	fmt.Println("mina folderite")
 
-	cmd := exec.Command("yt-dlp", "--quiet", "-j", "--no-simulate", "-x", "--audio-format", "opus", "-o", v.folder + "/%(id)s.opus", query)
+	cmd := exec.Command("yt-dlp", "--quiet", "-j", "--no-simulate", "-x", "--audio-format", "opus", "-o", v.folder+"/%(id)s.opus", query)
 	out, err := cmd.Output()
+	// fmt.Println(string(out))
 	chk(err)
 
-	fmt.Println("mina nasra se")
-
+	fmt.Println("mina ytdlp komandata")
 
 	var video map[string]interface{}
 	json.Unmarshal(out, &video)
@@ -103,6 +98,7 @@ func (v *VoiceInstance) DownloadSong(query string) (song Song) {
 }
 
 func (v *VoiceInstance) PlayQueue(song Song) {
+	fmt.Println(v.ginst)
 	v.AddQueue(song)
 	if v.speaking {
 		return
@@ -117,7 +113,11 @@ func (v *VoiceInstance) PlayQueue(song Song) {
 			}
 
 			v.nowPlaying = v.GetSong()
-			go v.ginst.Send("Now playing " + song.title)
+			//go v.ginst.Send("Now playing " + v.nowPlaying.title)
+			sendEmbed := embed.NewGenericEmbedAdvanced("Now playing", v.nowPlaying.title, 0x09b6e6)
+			go v.ginst.SendEmbed(*sendEmbed)
+
+			fmt.Printf("now playing: %+v\n", v.nowPlaying)
 
 			v.stop = false
 			v.skip = false
@@ -125,11 +125,11 @@ func (v *VoiceInstance) PlayQueue(song Song) {
 			v.pause = false
 			v.voice.Speaking(true)
 
-			v.AudioPlayer(song)
+			v.AudioPlayer(v.nowPlaying)
 
 			v.PopFromQueue(1)
-			fmt.Println(v.queue)
-			
+			fmt.Printf("queue after pop: %+v\n", v.queue)
+
 			if v.stop {
 				v.ClearQueue()
 			}
@@ -142,13 +142,13 @@ func (v *VoiceInstance) PlayQueue(song Song) {
 	}()
 }
 
-func (v *VoiceInstance) AudioPlayer(song Song){
+func (v *VoiceInstance) AudioPlayer(song Song) {
 	opts := dca.StdEncodeOptions
 	opts.RawOutput = true
 	opts.Bitrate = 128
 	opts.Application = "lowdelay"
 
-	encodeSession, err := dca.EncodeFile(v.folder + "/" + song.id + ".opus", opts)
+	encodeSession, err := dca.EncodeFile(v.folder+"/"+song.id+".opus", opts)
 	chk(err)
 
 	v.encoder = encodeSession
@@ -158,7 +158,7 @@ func (v *VoiceInstance) AudioPlayer(song Song){
 
 	for {
 		select {
-		case err := <- done:
+		case err := <-done:
 			if err != nil && err != io.EOF {
 				fmt.Println("FATAL: an error occured\n ", err)
 			}
@@ -169,7 +169,7 @@ func (v *VoiceInstance) AudioPlayer(song Song){
 	}
 }
 
-func (v *VoiceInstance) Stop(){
+func (v *VoiceInstance) Stop() {
 	v.stop = true
 	if v.encoder != nil {
 		v.encoder.Cleanup()
