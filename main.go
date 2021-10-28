@@ -118,6 +118,8 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		ginst.v.Resume()
 	case "stop":
 		ginst.v.Stop()
+	case "queue", "q":
+		ginst.v.ListQueue()
 	}
 }
 

@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	// "os"
+	"math"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Clinet/discordgo-embed"
 	"github.com/bwmarrin/discordgo"
@@ -31,13 +33,45 @@ type VoiceInstance struct {
 	stop       bool
 	skip       bool
 	folder     string
+	timer      *time.Timer
 }
 
 type Song struct {
-	title    string
-	url      string
-	id       string
-	duration float64
+	title     string
+	url       string
+	id        string
+	duration  float64
+	thumbnail string
+}
+
+func TimeFormat(duration float64) string {
+	hrs := math.Floor(duration / 3600)
+	mins := math.Floor(math.Mod(duration, 3600) / 60)
+	secs := math.Mod(math.Floor(duration), 60)
+
+	var out string
+	var minOut string
+	var secOut string
+
+	if mins < 10 {
+		minOut = "0"
+	} else {
+		minOut = ""
+	}
+
+	if secs < 10 {
+		secOut = "0"
+	} else {
+		secOut = ""
+	}
+
+	if hrs > 0 {
+		out += "" + strconv.FormatFloat(hrs, 'f', 0, 64) + ":" + minOut
+	}
+
+	out += "" + strconv.FormatFloat(mins, 'f', 0, 64) + ":" + secOut
+	out += "" + strconv.FormatFloat(secs, 'f', 0, 64)
+	return out
 }
 
 func (v *VoiceInstance) AddQueue(song Song) {
@@ -68,6 +102,32 @@ func (v *VoiceInstance) ClearQueue() {
 	v.queue = []Song{}
 }
 
+func (v *VoiceInstance) ListQueue() {
+	if len(v.queue) == 0 {
+		emb := embed.Embed{MessageEmbed: embed.NewGenericEmbed("Queue empty!", "Use ?play to play a song.")}
+		v.ginst.SendEmbed(*emb.MessageEmbed)
+		return
+	}
+
+	emb := embed.Embed{MessageEmbed: embed.NewGenericEmbedAdvanced("Queue", "", 0x09b6e6)}
+
+	var list string
+
+	list = "```"
+
+	for i, k := range v.queue {
+		//fmt.Println(strconv.Itoa(i) + ": " + k.title)
+		list += strconv.Itoa(i) + ": " + k.title + "\n"
+	}
+
+	list += "```"
+
+	//emb.AddField("Songs", strconv.Itoa(i+1) + ": " + k.title)
+	emb.AddField("Songs", list)
+
+	v.ginst.SendEmbed(*emb.MessageEmbed)
+}
+
 func (v *VoiceInstance) DownloadSong(query string) (song Song) {
 	if !strings.HasPrefix("https://", query) {
 		query = "ytsearch:" + query
@@ -80,25 +140,25 @@ func (v *VoiceInstance) DownloadSong(query string) (song Song) {
 		guildFolders = append(guildFolders, dir)
 	}
 
-	fmt.Println("mina folderite")
-
+	fmt.Println("Downloading video...")
 	cmd := exec.Command("yt-dlp", "--quiet", "-j", "--no-simulate", "-x", "--audio-format", "opus", "-o", v.folder+"/%(id)s.opus", query)
 	out, err := cmd.Output()
-	// fmt.Println(string(out))
+	//fmt.Println(string(out))
 	chk(err)
 
-	fmt.Println("mina ytdlp komandata")
+	fmt.Println("Video downloaded!")
 
 	var video map[string]interface{}
 	json.Unmarshal(out, &video)
 	song.title = video["title"].(string)
 	song.id = video["id"].(string)
 	song.duration = video["duration"].(float64)
+	song.thumbnail = video["thumbnails"].([]interface{})[0].(map[string]interface{})["url"].(string)
+	song.url = "https://www.youtube.com/watch?v=" + song.id
 	return song
 }
 
 func (v *VoiceInstance) PlayQueue(song Song) {
-	fmt.Println(v.ginst)
 	v.AddQueue(song)
 	if v.speaking {
 		return
@@ -113,11 +173,16 @@ func (v *VoiceInstance) PlayQueue(song Song) {
 			}
 
 			v.nowPlaying = v.GetSong()
-			//go v.ginst.Send("Now playing " + v.nowPlaying.title)
-			sendEmbed := embed.NewGenericEmbedAdvanced("Now playing", v.nowPlaying.title, 0x09b6e6)
-			go v.ginst.SendEmbed(*sendEmbed)
+			emb := embed.Embed{MessageEmbed: embed.NewGenericEmbedAdvanced(v.nowPlaying.title, v.nowPlaying.title, 0x09b6e6)}
+			emb.SetThumbnail(v.nowPlaying.thumbnail)
+			emb.SetURL(v.nowPlaying.url)
+			dur := TimeFormat(v.nowPlaying.duration)
+			emb.AddField("Duration", dur)
+			emb.SetFooter("You have played this bruh times.")
 
-			fmt.Printf("now playing: %+v\n", v.nowPlaying)
+			fmt.Println(v.nowPlaying.thumbnail)
+
+			go v.ginst.SendEmbed(*emb.MessageEmbed)
 
 			v.stop = false
 			v.skip = false
@@ -128,7 +193,6 @@ func (v *VoiceInstance) PlayQueue(song Song) {
 			v.AudioPlayer(v.nowPlaying)
 
 			v.PopFromQueue(1)
-			fmt.Printf("queue after pop: %+v\n", v.queue)
 
 			if v.stop {
 				v.ClearQueue()
