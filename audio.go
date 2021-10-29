@@ -90,10 +90,14 @@ func (v *VoiceInstance) GetSong() (song Song) {
 	return
 }
 
-func (v *VoiceInstance) PopFromQueue(i int) {
+func (v *VoiceInstance) PopFromQueue(i int) Song {
 	v.queueMutex.Lock()
 	defer v.queueMutex.Unlock()
-	v.queue = v.queue[i:]
+	//v.queue = v.queue[i:]
+	i = i - 1
+	el := v.queue[i]
+	v.queue = append(v.queue[:i], v.queue[i+1:]...)
+	return el
 }
 
 func (v *VoiceInstance) ClearQueue() {
@@ -116,13 +120,11 @@ func (v *VoiceInstance) ListQueue() {
 	list = "```"
 
 	for i, k := range v.queue {
-		//fmt.Println(strconv.Itoa(i) + ": " + k.title)
 		list += strconv.Itoa(i) + ": " + k.title + "\n"
 	}
 
 	list += "```"
 
-	//emb.AddField("Songs", strconv.Itoa(i+1) + ": " + k.title)
 	emb.AddField("Songs", list)
 
 	v.ginst.SendEmbed(*emb.MessageEmbed)

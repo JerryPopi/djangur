@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -120,6 +121,14 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		ginst.v.Stop()
 	case "queue", "q":
 		ginst.v.ListQueue()
+	case "remove", "r":
+		if arg == "" {
+			ginst.Send("Invalid remove index.")
+			return
+		}
+		i, _ := strconv.Atoi(arg)
+		removed := ginst.v.PopFromQueue(i)
+		ginst.Send("Removed " + removed.title)
 	}
 }
 
@@ -139,7 +148,7 @@ func main() {
 
 	ginsts = make(map[string]GuildInstance)
 
-	fmt.Println("Bot is now running.  Press CTRL-C to exit.")
+	fmt.Println("Bot is now running. Press CTRL-C to exit.")
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
