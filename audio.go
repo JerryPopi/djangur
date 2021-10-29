@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -12,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Clinet/discordgo-embed"
+	embed "github.com/Clinet/discordgo-embed"
 	"github.com/bwmarrin/discordgo"
 	"github.com/jonas747/dca"
 )
@@ -20,20 +21,22 @@ import (
 var guildFolders []string
 
 type VoiceInstance struct {
-	ginst      *GuildInstance
-	voice      *discordgo.VoiceConnection
-	encoder    *dca.EncodeSession
-	stream     *dca.StreamingSession
-	queueMutex sync.Mutex
-	audioMutex sync.Mutex
-	nowPlaying Song
-	queue      []Song
-	speaking   bool
-	pause      bool
-	stop       bool
-	skip       bool
-	folder     string
-	timer      *time.Timer
+	ginst              *GuildInstance
+	voice              *discordgo.VoiceConnection
+	encoder            *dca.EncodeSession
+	stream             *dca.StreamingSession
+	queueMutex         sync.Mutex
+	audioMutex         sync.Mutex
+	nowPlaying         Song
+	queue              []Song
+	speaking           bool
+	pause              bool
+	stop               bool
+	skip               bool
+	folder             string
+	timeStarted        int64
+	pausedAndResumedTS []int64
+	pausedTime         int
 }
 
 type Song struct {
@@ -136,12 +139,49 @@ func (v *VoiceInstance) NowPlaying() {
 		v.ginst.SendEmbed(*emb.MessageEmbed)
 		return
 	}
-	emb := embed.Embed{MessageEmbed: embed.NewGenericEmbedAdvanced("Now playing", v.nowPlaying.title, 0x09b6e6)}
+	emb := embed.Embed{MessageEmbed: embed.NewGenericEmbedAdvanced(v.nowPlaying.title, "", 0x09b6e6)}
+	emb.SetURL(v.nowPlaying.url)
+	emb.SetThumbnail(v.nowPlaying.thumbnail)
+
+	for i := 0; i < len(v.pausedAndResumedTS); i += 2 {
+		fmt.Println(int(v.pausedAndResumedTS[i]))
+		if i+1 < len(v.pausedAndResumedTS) {
+
+			v.pausedTime = (int(v.pausedAndResumedTS[i+1]) - int(v.pausedAndResumedTS[i]))
+			fmt.Println(int(v.pausedAndResumedTS[i+1]) - int(v.pausedAndResumedTS[i]))
+			fmt.Println("---")
+		} else {
+			fmt.Println("laina")
+			// v.pausedAndResumedTS = append(v.pausedAndResumedTS, time.Now().Unix())
+			v.pausedTime = (int(time.Now().Unix()) - int(v.pausedAndResumedTS[i]))
+		}
+	}
+
+	fmt.Println(v.pausedAndResumedTS)
+	fmt.Println(v.pausedTime)
+	timeDifference := (time.Now().Unix() - int64(v.pausedTime)) - v.timeStarted
+	fmt.Println(v.timeStarted)
+	fmt.Println(timeDifference)
+	displayTimestamp := int(math.Round((float64(timeDifference) / v.nowPlaying.duration) * 30))
+	displayTimestampEmoji := ""
+	for i := 0; i < 30; i++ {
+		if i == displayTimestamp {
+			displayTimestampEmoji += "🔴"
+		} else {
+			displayTimestampEmoji += "▬"
+		}
+	}
+	emb.AddField("`"+displayTimestampEmoji+"`", "`"+TimeFormat(float64(timeDifference))+"/"+TimeFormat(float64(v.nowPlaying.duration))+"`")
 
 	v.ginst.SendEmbed(*emb.MessageEmbed)
 }
 
-func (v *VoiceInstance) DownloadSong(query string) (song Song) {
+func (v *VoiceInstance) DownloadSong(query string) (*Song, error) {
+	if query == "" {
+		emb := embed.Embed{MessageEmbed: embed.NewGenericEmbed("Nothing to search for!", "")}
+		v.ginst.SendEmbed(*emb.MessageEmbed)
+		return new(Song), errors.New("no-query")
+	}
 	if !strings.HasPrefix("https://", query) {
 		query = "ytsearch:" + query
 	}
@@ -163,12 +203,13 @@ func (v *VoiceInstance) DownloadSong(query string) (song Song) {
 
 	var video map[string]interface{}
 	json.Unmarshal(out, &video)
+	song := new(Song)
 	song.title = video["title"].(string)
 	song.id = video["id"].(string)
 	song.duration = video["duration"].(float64)
 	song.thumbnail = video["thumbnails"].([]interface{})[0].(map[string]interface{})["url"].(string)
 	song.url = "https://www.youtube.com/watch?v=" + song.id
-	return song
+	return song, nil
 }
 
 func (v *VoiceInstance) PlayQueue(song Song) {
@@ -202,6 +243,8 @@ func (v *VoiceInstance) PlayQueue(song Song) {
 			v.speaking = true
 			v.pause = false
 			v.voice.Speaking(true)
+			v.timeStarted = time.Now().Unix()
+			v.pausedTime = 0
 
 			v.AudioPlayer(v.nowPlaying)
 
@@ -267,6 +310,9 @@ func (v *VoiceInstance) Skip() bool {
 }
 
 func (v *VoiceInstance) Pause() {
+	if !v.pause {
+		v.pausedAndResumedTS = append(v.pausedAndResumedTS, time.Now().Unix())
+	}
 	v.pause = true
 	if v.stream != nil {
 		v.stream.SetPaused(true)
@@ -274,6 +320,10 @@ func (v *VoiceInstance) Pause() {
 }
 
 func (v *VoiceInstance) Resume() {
+	if v.pause {
+		// v.pausedAndResumedTS = v.pausedAndResumedTS[:len(v.pausedAndResumedTS)-1]
+		v.pausedAndResumedTS = append(v.pausedAndResumedTS, time.Now().Unix())
+	}
 	v.pause = false
 	if v.stream != nil {
 		v.stream.SetPaused(false)

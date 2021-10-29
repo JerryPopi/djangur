@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -63,7 +64,7 @@ func getGinst(s *discordgo.Session, m *discordgo.MessageCreate) (ginst *GuildIns
 		guild, err := s.State.Guild(m.GuildID)
 		chk(err)
 		ginsts[m.GuildID] = GuildInstance{
-			v:           &VoiceInstance{ginst: &ginst},
+			v:           &VoiceInstance{ginst: &ginst, timeStarted: time.Now().Unix()},
 			s:           s,
 			g:           guild,
 			lastChannel: m.ChannelID,
@@ -109,8 +110,11 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		ginst.v.voice = dgv
 		chk(err)
 
-		song := ginst.v.DownloadSong(arg)
-		ginst.v.PlayQueue(song)
+		song, err := ginst.v.DownloadSong(arg)
+		if err != nil {
+			return
+		}
+		ginst.v.PlayQueue(*song)
 	case "skip", "s":
 		ginst.v.Skip()
 	case "pause":
