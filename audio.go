@@ -130,6 +130,17 @@ func (v *VoiceInstance) ListQueue() {
 	v.ginst.SendEmbed(*emb.MessageEmbed)
 }
 
+func (v *VoiceInstance) NowPlaying() {
+	if len(v.queue) == 0 {
+		emb := embed.Embed{MessageEmbed: embed.NewGenericEmbed("Queue empty!", "Use ?play to play a song.")}
+		v.ginst.SendEmbed(*emb.MessageEmbed)
+		return
+	}
+	emb := embed.Embed{MessageEmbed: embed.NewGenericEmbedAdvanced("Now playing", v.nowPlaying.title, 0x09b6e6)}
+
+	v.ginst.SendEmbed(*emb.MessageEmbed)
+}
+
 func (v *VoiceInstance) DownloadSong(query string) (song Song) {
 	if !strings.HasPrefix("https://", query) {
 		query = "ytsearch:" + query

@@ -129,6 +129,8 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		i, _ := strconv.Atoi(arg)
 		removed := ginst.v.PopFromQueue(i)
 		ginst.Send("Removed " + removed.title)
+	case "nowplaying", "np":
+		ginst.v.NowPlaying()
 	}
 }
 
