@@ -3,14 +3,16 @@ module github.com/JerryPopi/djangur
 go 1.17
 
 require (
-	github.com/Clinet/discordgo-embed v0.0.0-20190411043415-d754bc1a576c
-	github.com/bwmarrin/discordgo v0.23.2
+	github.com/Clinet/discordgo-embed v0.0.0-20220113222025-bafe0c917646
+	github.com/bwmarrin/discordgo v0.24.0
 )
 
+require golang.org/x/sys v0.0.0-20220307203707-22a9840ba4d7 // indirect
+
 require (
-	github.com/gorilla/websocket v1.4.0 // indirect
+	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/jonas747/dca v0.0.0-20210930103944-155f5e5f0cc7
-	golang.org/x/crypto v0.0.0-20181030102418-4d3f4d9ffa16 // indirect
+	golang.org/x/crypto v0.0.0-20220307211146-efcb8507fb70 // indirect
 )
 
 require (
