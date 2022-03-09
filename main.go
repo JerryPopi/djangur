@@ -109,8 +109,14 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		dgv, err := s.ChannelVoiceJoin(m.GuildID, vc, false, true)
 		ginst.v.voice = dgv
 		chk(err)
+		var song* Song
+		if len(m.Attachments) > 0 {
+			song, err = ginst.v.DownloadSong(m.Attachments[0].URL)
+		} else {
+			song, err = ginst.v.DownloadSong(arg)
+		}
 
-		song, err := ginst.v.DownloadSong(arg)
+		// song, err := ginst.v.DownloadSong(arg)
 		if err != nil {
 			return
 		}
@@ -135,6 +141,18 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		ginst.Send("Removed " + removed.title)
 	case "nowplaying", "np":
 		ginst.v.NowPlaying()
+	case "loop", "l":
+		switch ginst.v.loop {
+		case 0:
+			ginst.v.loop = 1
+			ginst.Send("Looping current track.")
+		case 1:
+			ginst.v.loop = 2
+			ginst.Send("Looping entire queue.")
+		case 2:
+			ginst.v.loop = 0
+			ginst.Send("Stopped looping.")
+		}
 	}
 }
 

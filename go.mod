@@ -13,4 +13,7 @@ require (
 	golang.org/x/crypto v0.0.0-20181030102418-4d3f4d9ffa16 // indirect
 )
 
-require github.com/jonas747/ogg v0.0.0-20161220051205-b4f6f4cf3757 // indirect
+require (
+	github.com/jonas747/ogg v0.0.0-20161220051205-b4f6f4cf3757 // indirect
+	layeh.com/gopus v0.0.0-20210501142526-1ee02d434e32
+)

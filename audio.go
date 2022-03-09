@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"io/ioutil"
+	"os"
+
+	// "io"
 	"math"
 	"os/exec"
 	"strconv"
@@ -14,6 +15,8 @@ import (
 	"time"
 
 	embed "github.com/Clinet/discordgo-embed"
+	// "github.com/bwmarrin/dgvoice"
+
 	"github.com/bwmarrin/discordgo"
 	"github.com/jonas747/dca"
 )
@@ -29,11 +32,12 @@ type VoiceInstance struct {
 	audioMutex         sync.Mutex
 	nowPlaying         Song
 	queue              []Song
+	loop               uint8
 	speaking           bool
 	pause              bool
 	stop               bool
 	skip               bool
-	folder             string
+	// folder             string
 	timeStarted        int64
 	pausedAndResumedTS []int64
 	pausedTime         int
@@ -87,7 +91,7 @@ func (v *VoiceInstance) GetSong() (song Song) {
 	v.queueMutex.Lock()
 	defer v.queueMutex.Unlock()
 	if len(v.queue) != 0 {
-		fmt.Printf("queue at getsong %+v\n", v.queue[0])
+		// fmt.Printf("queue at getsong %+v\n", v.queue[0])
 		return v.queue[0]
 	}
 	return
@@ -147,13 +151,13 @@ func (v *VoiceInstance) NowPlaying() {
 		fmt.Println(int(v.pausedAndResumedTS[i]))
 		if i+1 < len(v.pausedAndResumedTS) {
 
-			v.pausedTime = (int(v.pausedAndResumedTS[i+1]) - int(v.pausedAndResumedTS[i]))
+			v.pausedTime = int(v.pausedAndResumedTS[i+1]) - int(v.pausedAndResumedTS[i])
 			fmt.Println(int(v.pausedAndResumedTS[i+1]) - int(v.pausedAndResumedTS[i]))
 			fmt.Println("---")
 		} else {
 			fmt.Println("laina")
 			// v.pausedAndResumedTS = append(v.pausedAndResumedTS, time.Now().Unix())
-			v.pausedTime = (int(time.Now().Unix()) - int(v.pausedAndResumedTS[i]))
+			v.pausedTime = int(time.Now().Unix()) - int(v.pausedAndResumedTS[i])
 		}
 	}
 
@@ -171,7 +175,7 @@ func (v *VoiceInstance) NowPlaying() {
 			displayTimestampEmoji += "▬"
 		}
 	}
-	emb.AddField("`"+displayTimestampEmoji+"`", "`"+TimeFormat(float64(timeDifference))+"/"+TimeFormat(float64(v.nowPlaying.duration))+"`")
+	emb.AddField("`"+displayTimestampEmoji+"`", "`"+TimeFormat(float64(timeDifference))+"/"+TimeFormat(v.nowPlaying.duration)+"`")
 
 	v.ginst.SendEmbed(*emb.MessageEmbed)
 }
@@ -186,29 +190,51 @@ func (v *VoiceInstance) DownloadSong(query string) (*Song, error) {
 		query = "ytsearch:" + query
 	}
 	fmt.Println(query)
-	if v.folder == "" {
-		dir, err := ioutil.TempDir("/tmp", "djangur")
-		chk(err)
-		v.folder = dir
-		guildFolders = append(guildFolders, dir)
-	}
 
-	fmt.Println("Downloading video...")
-	cmd := exec.Command("yt-dlp", "--quiet", "-j", "--no-simulate", "-x", "--audio-format", "opus", "-o", v.folder+"/%(id)s.opus", query)
-	out, err := cmd.Output()
-	//fmt.Println(string(out))
+	// var video map[string]interface{}
+	// json.Unmarshal(out, &video)
+	// song := new(Song)
+	// song.title = video["title"].(string)
+	// song.id = video["id"].(string)
+	// song.duration = video["duration"].(float64)
+	// song.thumbnail = video["thumbnails"].([]interface{})[0].(map[string]interface{})["url"].(string)
+	// song.url = "https://www.youtube.com/watch?v=" + song.id
+	// return song, nil
+
+
+	// NEW IMPLEMENTATION (OLD IMPLEMENTATION)
+	cmd := exec.Command("yt-dlp", "--print", "\"%()j\"", "-x", "--get-duration", query)
+	stdout, err := cmd.Output()
 	chk(err)
 
-	fmt.Println("Video downloaded!")
+	err = os.WriteFile("temp.json", stdout, 0644)
+	chk(err)
+
+	output := strings.Split(string(stdout), "\n")
 
 	var video map[string]interface{}
-	json.Unmarshal(out, &video)
+	json.Unmarshal([]byte(output[0]), &video)
 	song := new(Song)
-	song.title = video["title"].(string)
-	song.id = video["id"].(string)
-	song.duration = video["duration"].(float64)
-	song.thumbnail = video["thumbnails"].([]interface{})[0].(map[string]interface{})["url"].(string)
-	song.url = "https://www.youtube.com/watch?v=" + song.id
+
+	if video["formats"] != nil {
+		formats := video["formats"].([]interface{})
+		for _, k := range formats {
+			format := k.(map[string]interface{})
+			if !strings.Contains(format["format_id"].(string), "sb") {
+				song.url = format["url"].(string)
+				break
+			}
+		}
+	} else if video["url"] != nil {
+		song.url = video["url"].(string)
+	}
+
+	// song.duration, err = strconv.ParseFloat(output[1], 64)
+	// chk(err)
+	println("TIMESTAMP: " + output[1])
+	time, _ := time.ParseDuration(output[1])
+	println("TIME: " + time.String())
+
 	return song, nil
 }
 
@@ -248,7 +274,9 @@ func (v *VoiceInstance) PlayQueue(song Song) {
 
 			v.AudioPlayer(v.nowPlaying)
 
-			v.PopFromQueue(1)
+			if v.loop != 1 {
+				v.PopFromQueue(1)
+			}
 
 			if v.stop {
 				v.ClearQueue()
@@ -262,31 +290,36 @@ func (v *VoiceInstance) PlayQueue(song Song) {
 	}()
 }
 
+// func (v *VoiceInstance) AudioPlayer(song Song) {
+// 	opts := dca.StdEncodeOptions
+// 	opts.RawOutput = true
+// 	opts.Bitrate = 128
+// 	opts.Application = "lowdelay"
+
+// 	// encodeSession, err := dca.EncodeFile(v.folder+"/"+song.id+".opus", opts)
+// 	encodeSession, err := dca.EncodeFile(song.url, opts)
+// 	chk(err)
+
+// 	v.encoder = encodeSession
+// 	done := make(chan error)
+// 	stream := dca.NewStream(encodeSession, v.voice, done)
+// 	v.stream = stream
+
+// 	for {
+// 		select {
+// 		case err := <-done:
+// 			if err != nil && err != io.EOF {
+// 				fmt.Println("FATAL: an error occured\n ", err)
+// 			}
+// 			fmt.Println("End of track")
+// 			encodeSession.Cleanup()
+// 			return
+// 		}
+// 	}
+// }
+
 func (v *VoiceInstance) AudioPlayer(song Song) {
-	opts := dca.StdEncodeOptions
-	opts.RawOutput = true
-	opts.Bitrate = 128
-	opts.Application = "lowdelay"
-
-	encodeSession, err := dca.EncodeFile(v.folder+"/"+song.id+".opus", opts)
-	chk(err)
-
-	v.encoder = encodeSession
-	done := make(chan error)
-	stream := dca.NewStream(encodeSession, v.voice, done)
-	v.stream = stream
-
-	for {
-		select {
-		case err := <-done:
-			if err != nil && err != io.EOF {
-				fmt.Println("FATAL: an error occured\n ", err)
-			}
-			fmt.Println("End of track")
-			encodeSession.Cleanup()
-			return
-		}
-	}
+	PlayAudioFile(v.voice, song.url, make(chan bool))
 }
 
 func (v *VoiceInstance) Stop() {
