@@ -4,9 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-
-	// "io"
 	"math"
 	"os/exec"
 	"strconv"
@@ -15,8 +12,6 @@ import (
 	"time"
 
 	embed "github.com/Clinet/discordgo-embed"
-	// "github.com/bwmarrin/dgvoice"
-
 	"github.com/bwmarrin/discordgo"
 	"github.com/jonas747/dca"
 )
@@ -79,6 +74,25 @@ func TimeFormat(duration float64) string {
 	out += "" + strconv.FormatFloat(mins, 'f', 0, 64) + ":" + secOut
 	out += "" + strconv.FormatFloat(secs, 'f', 0, 64)
 	return out
+}
+
+func DurationToUnix(dur string) float64 {
+	split := strings.Split(dur, ":")
+	if len(split) == 3 {
+		hrs, _ := strconv.Atoi(split[0])
+		mins, _ := strconv.Atoi(split[1])
+		secs, _ := strconv.Atoi(split[2])
+		return float64(hrs * 3600 + mins * 60 + secs)
+	} else if len(split) == 2 {
+		mins, _ := strconv.Atoi(split[0])
+		secs, _ := strconv.Atoi(split[1])
+		return float64(mins * 60 + secs)
+	} else if len(split) == 1 {
+		secs, _ := strconv.Atoi(split[0])
+		return float64(secs)
+	} else {
+		return 0
+	}
 }
 
 func (v *VoiceInstance) AddQueue(song Song) {
@@ -203,14 +217,17 @@ func (v *VoiceInstance) DownloadSong(query string) (*Song, error) {
 
 
 	// NEW IMPLEMENTATION (OLD IMPLEMENTATION)
-	cmd := exec.Command("yt-dlp", "--print", "\"%()j\"", "-x", "--get-duration", query)
+	cmd := exec.Command("yt-dlp", "--print", "\"%()j\"", "-x", "--get-duration", "--get-thumbnail", query)
 	stdout, err := cmd.Output()
 	chk(err)
 
-	err = os.WriteFile("temp.json", stdout, 0644)
-	chk(err)
-
+	
 	output := strings.Split(string(stdout), "\n")
+	// err = os.WriteFile("temp.json", []byte(output[0]), 0644)
+	// chk(err)
+
+	output[0] = strings.TrimPrefix(output[0], "\"")
+	output[0] = strings.TrimSuffix(output[0], "\"")
 
 	var video map[string]interface{}
 	json.Unmarshal([]byte(output[0]), &video)
@@ -229,11 +246,10 @@ func (v *VoiceInstance) DownloadSong(query string) (*Song, error) {
 		song.url = video["url"].(string)
 	}
 
-	// song.duration, err = strconv.ParseFloat(output[1], 64)
-	// chk(err)
-	println("TIMESTAMP: " + output[1])
-	time, _ := time.ParseDuration(output[1])
-	println("TIME: " + time.String())
+	println("TIMESTAMP: " + output[2])
+	println("TIME: " + strconv.FormatFloat(DurationToUnix(output[2]), 'f', -1, 64))
+	song.thumbnail = output[1]
+	song.duration = DurationToUnix(output[2])
 
 	return song, nil
 }
